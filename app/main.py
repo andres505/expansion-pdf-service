@@ -1,5 +1,6 @@
 from fastapi import FastAPI, UploadFile, File, Form
-from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse
+from io import BytesIO
 import json
 import os
 import tempfile
@@ -18,14 +19,18 @@ async def generate_pdf(
     folio = payload.get("id_ubicacion", "TEST")
 
     with tempfile.TemporaryDirectory() as tmp:
+        # --------------------
         # Imagen
+        # --------------------
         image_path = None
         if site_image:
             image_path = os.path.join(tmp, site_image.filename)
             with open(image_path, "wb") as f:
                 f.write(await site_image.read())
 
+        # --------------------
         # PDF
+        # --------------------
         pdf_path = os.path.join(tmp, f"evaluacion_{folio}.pdf")
 
         generate_basic_pdf(
@@ -34,8 +39,18 @@ async def generate_pdf(
             output_path=pdf_path,
         )
 
-        return FileResponse(
-            path=pdf_path,
-            media_type="application/pdf",
-            filename=f"evaluacion_{folio}.pdf"
-        )
+        # --------------------
+        # Leer PDF a memoria
+        # --------------------
+        with open(pdf_path, "rb") as f:
+            pdf_bytes = f.read()
+
+    # 👈 Aquí el temp dir YA se borró, pero el PDF vive en memoria
+
+    return StreamingResponse(
+        BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="evaluacion_{folio}.pdf"'
+        },
+    )
