@@ -1,5 +1,5 @@
-# app/main.py
 from fastapi import FastAPI, UploadFile, File, Form
+from fastapi.responses import FileResponse
 import json
 import os
 import tempfile
@@ -15,11 +15,10 @@ async def generate_pdf(
     site_image: UploadFile | None = File(None),
 ):
     payload = json.loads(payload_flat)
-
     folio = payload.get("id_ubicacion", "TEST")
 
     with tempfile.TemporaryDirectory() as tmp:
-        # Guardar imagen
+        # Imagen
         image_path = None
         if site_image:
             image_path = os.path.join(tmp, site_image.filename)
@@ -27,7 +26,7 @@ async def generate_pdf(
                 f.write(await site_image.read())
 
         # PDF
-        pdf_path = os.path.join(tmp, f"test_{folio}.pdf")
+        pdf_path = os.path.join(tmp, f"evaluacion_{folio}.pdf")
 
         generate_basic_pdf(
             payload=payload,
@@ -35,8 +34,8 @@ async def generate_pdf(
             output_path=pdf_path,
         )
 
-        return {
-            "status": "ok",
-            "folio": folio,
-            "pdf_generated": True
-        }
+        return FileResponse(
+            path=pdf_path,
+            media_type="application/pdf",
+            filename=f"evaluacion_{folio}.pdf"
+        )
