@@ -10,6 +10,11 @@ from app.pdf_report import generate_expansion_pdf
 
 app = FastAPI(title="Expansion PDF Service")
 
+print("=== DEBUG PAYLOAD ===")
+print(payload_obj)
+print("site_lat raw:", site_lat)
+print("site_lon raw:", site_lon)
+print("CSV filename:", places_csv.filename)
 
 @app.post("/generate-pdf")
 async def generate_pdf(
