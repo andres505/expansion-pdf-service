@@ -1,0 +1,15 @@
+fastapi
+
+uvicorn
+
+pandas
+
+plotly
+
+kaleido
+
+pillow
+
+reportlab
+
+python-multipart
