@@ -6,8 +6,9 @@ import os
 import tempfile
 import shutil
 
-from expansion.places_map import generate_places_map_in_memory
-from expansion.pdf_report import generate_expansion_pdf
+from app.places_map import generate_places_map_in_memory
+from app.pdf_report import generate_expansion_pdf
+
 
 app = FastAPI()
 
