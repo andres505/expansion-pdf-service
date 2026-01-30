@@ -1,12 +1,7 @@
-# expansion/places_map.py
-
-from __future__ import annotations
-
 import pandas as pd
 import plotly.graph_objects as go
 import math
 import io
-
 
 # =====================================================
 # CONFIG
@@ -23,7 +18,7 @@ def pick_col(df, candidates):
     for c in candidates:
         if c.lower() in cols:
             return cols[c.lower()]
-    raise ValueError(f"No se encontró columna en {candidates}")
+    return None
 
 
 def circle_coords(lat, lon, radius_m, n=200):
@@ -60,17 +55,21 @@ def bbox_from_radius(lat, lon, radius_m):
 # =====================================================
 # MAIN
 # =====================================================
-def generate_places_map(
+def generate_places_map_in_memory(
     *,
     csv_path: str,
-    site_lat: float,
-    site_lon: float,
     image_size: int = 820,
     radios=DEFAULT_RADIOS,
 ):
     """
-    Genera mapa de entorno comercial + conteos
-    Retorna PNG en memoria y conteos por grupo
+    Genera un mapa PNG en memoria (BytesIO) con:
+    - puntos clasificados
+    - radios reales
+    - bounds exactos
+    - conteos por grupo
+
+    Retorna:
+        buf (BytesIO), counts (dict)
     """
 
     # -------------------------------------------------
@@ -82,12 +81,18 @@ def generate_places_map(
     lon_col = pick_col(df, ["place_lon", "lon", "lng", "longitude"])
     name_col = pick_col(df, ["name", "nombre"])
 
+    if not lat_col or not lon_col:
+        raise ValueError("No se encontraron columnas de latitud/longitud")
+
     df[lat_col] = pd.to_numeric(df[lat_col], errors="coerce")
     df[lon_col] = pd.to_numeric(df[lon_col], errors="coerce")
     df = df.dropna(subset=[lat_col, lon_col])
 
+    main_lat = df[pick_col(df, ["query_lat"])].iloc[0]
+    main_lon = df[pick_col(df, ["query_lon"])].iloc[0]
+
     # -------------------------------------------------
-    # CLASIFICACIÓN (MISMA LÓGICA)
+    # CLASIFICACIÓN
     # -------------------------------------------------
     def classify(row):
         name = str(row.get(name_col, "")).lower()
@@ -157,8 +162,8 @@ def generate_places_map(
 
     # Sitio evaluado
     fig.add_trace(go.Scattermapbox(
-        lat=[site_lat],
-        lon=[site_lon],
+        lat=[main_lat],
+        lon=[main_lon],
         mode="markers",
         marker=dict(size=12, color="black"),
         name="Sitio evaluado"
@@ -166,7 +171,7 @@ def generate_places_map(
 
     # Radios
     for r in radios:
-        clats, clons = circle_coords(site_lat, site_lon, r)
+        clats, clons = circle_coords(main_lat, main_lon, r)
         fig.add_trace(go.Scattermapbox(
             lat=clats,
             lon=clons,
@@ -175,8 +180,8 @@ def generate_places_map(
             name=f"{r} m"
         ))
 
-    # Bounds exactos (clave)
-    bbox = bbox_from_radius(site_lat, site_lon, max(radios))
+    # Bounds exactos
+    bbox = bbox_from_radius(main_lat, main_lon, max(radios))
 
     fig.update_layout(
         mapbox=dict(
@@ -194,6 +199,9 @@ def generate_places_map(
         legend=dict(orientation="h")
     )
 
+    # -------------------------------------------------
+    # EXPORT PNG EN MEMORIA
+    # -------------------------------------------------
     buf = io.BytesIO()
     fig.write_image(
         buf,
@@ -204,7 +212,4 @@ def generate_places_map(
     )
     buf.seek(0)
 
-    return {
-        "map_png": buf,
-        "counts": counts,
-    }
+    return buf, counts
