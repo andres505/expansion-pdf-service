@@ -1,5 +1,8 @@
 [build]
 builder = "NIXPACKS"
 
-[build.env]
-PLOTLY_GET_CHROME = "true"
+[build.nixpacks]
+packages = ["chromium"]
+
+[deploy]
+startCommand = "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
