@@ -6,6 +6,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import math
 import io
+-----------------------------------------------
+import kaleido
 
 # =====================================================
 # CONFIG
@@ -193,9 +195,11 @@ def generate_places_map(
         legend=dict(orientation="h")
     )
 
-    # -------------------------------------------------
+# -------------------------------------------------
     # EXPORT PNG EN MEMORIA
     # -------------------------------------------------
+    kaleido.get_chrome_sync()
+
     buf = io.BytesIO()
     fig.write_image(buf, format="png", width=image_size, height=image_size, scale=2)
     buf.seek(0)
@@ -204,4 +208,3 @@ def generate_places_map(
         "map_png": buf,
         "counts": counts,
     }
-
