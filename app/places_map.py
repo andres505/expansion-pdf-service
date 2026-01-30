@@ -1,3 +1,7 @@
+# expansion/places_map.py
+
+from __future__ import annotations
+
 import pandas as pd
 import plotly.graph_objects as go
 import math
@@ -18,7 +22,7 @@ def pick_col(df, candidates):
     for c in candidates:
         if c.lower() in cols:
             return cols[c.lower()]
-    return None
+    raise ValueError(f"No se encontró columna en {candidates}")
 
 
 def circle_coords(lat, lon, radius_m, n=200):
@@ -55,19 +59,21 @@ def bbox_from_radius(lat, lon, radius_m):
 # =====================================================
 # MAIN
 # =====================================================
-def generate_places_map_in_memory(
+def generate_places_map(
     *,
     csv_path: str,
+    site_lat: float,
+    site_lon: float,
     image_size: int = 820,
     radios=DEFAULT_RADIOS,
 ):
     """
-    Genera mapa de entorno comercial (PNG en memoria)
-    con radio real de 500 m.
+    Genera mapa de entorno comercial + conteos
+    Retorna PNG en memoria y conteos por grupo
     """
 
     # -------------------------------------------------
-    # LOAD
+    # LOAD CSV
     # -------------------------------------------------
     df = pd.read_csv(csv_path)
 
@@ -79,11 +85,8 @@ def generate_places_map_in_memory(
     df[lon_col] = pd.to_numeric(df[lon_col], errors="coerce")
     df = df.dropna(subset=[lat_col, lon_col])
 
-    main_lat = df[pick_col(df, ["query_lat"])].iloc[0]
-    main_lon = df[pick_col(df, ["query_lon"])].iloc[0]
-
     # -------------------------------------------------
-    # CLASIFICACIÓN
+    # CLASIFICACIÓN (MISMA LÓGICA)
     # -------------------------------------------------
     def classify(row):
         name = str(row.get(name_col, "")).lower()
@@ -153,8 +156,8 @@ def generate_places_map_in_memory(
 
     # Sitio evaluado
     fig.add_trace(go.Scattermapbox(
-        lat=[main_lat],
-        lon=[main_lon],
+        lat=[site_lat],
+        lon=[site_lon],
         mode="markers",
         marker=dict(size=12, color="black"),
         name="Sitio evaluado"
@@ -162,7 +165,7 @@ def generate_places_map_in_memory(
 
     # Radios
     for r in radios:
-        clats, clons = circle_coords(main_lat, main_lon, r)
+        clats, clons = circle_coords(site_lat, site_lon, r)
         fig.add_trace(go.Scattermapbox(
             lat=clats,
             lon=clons,
@@ -171,8 +174,8 @@ def generate_places_map_in_memory(
             name=f"{r} m"
         ))
 
-    # 🔑 BOUNDS EXACTOS (CLAVE)
-    bbox = bbox_from_radius(main_lat, main_lon, max(radios))
+    # Bounds exactos (clave)
+    bbox = bbox_from_radius(site_lat, site_lon, max(radios))
 
     fig.update_layout(
         mapbox=dict(
@@ -197,4 +200,8 @@ def generate_places_map_in_memory(
     fig.write_image(buf, format="png", width=image_size, height=image_size, scale=2)
     buf.seek(0)
 
-    return buf, counts
+    return {
+        "map_png": buf,
+        "counts": counts,
+    }
+
