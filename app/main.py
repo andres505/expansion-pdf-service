@@ -6,7 +6,7 @@ import os
 import tempfile
 
 from app.places_map import generate_places_map_in_memory
-from app.pdf_report import generate_basic_pdf
+from app.pdf_report import generate_expansion_pdf
 
 app = FastAPI(title="Expansion PDF Service")
 
@@ -19,10 +19,10 @@ async def generate_pdf(
 ):
     """
     Endpoint principal:
-    - Recibe payload_flat (JSON string)
-    - Recibe CSV de Google Places
-    - Recibe imagen del sitio (opcional)
-    - Genera PDF y lo devuelve como binario
+    - payload_flat: JSON string
+    - places_csv: CSV Google Places
+    - site_image: foto del sitio (opcional)
+    - devuelve PDF binario
     """
 
     # -------------------------------
@@ -30,6 +30,16 @@ async def generate_pdf(
     # -------------------------------
     payload = json.loads(payload_flat)
     folio = payload.get("id_ubicacion", "TEST")
+
+    # decisiones (por ahora dummy o pasadas desde n8n luego)
+    decision_modelo_1 = payload.get("decision_modelo_1", {
+        "decision": "-",
+        "explicacion": "-"
+    })
+    decision_modelo_2 = payload.get("decision_modelo_2", {
+        "decision": "-",
+        "explicacion": "-"
+    })
 
     with tempfile.TemporaryDirectory() as tmp:
         # -------------------------------
@@ -60,11 +70,14 @@ async def generate_pdf(
         # -------------------------------
         pdf_path = os.path.join(tmp, f"evaluacion_{folio}.pdf")
 
-        generate_basic_pdf(
+        generate_expansion_pdf(
             payload=payload,
-            site_image_path=site_image_path,
+            decision_modelo_1=decision_modelo_1,
+            decision_modelo_2=decision_modelo_2,
             map_image_buf=map_buf,
-            map_counts=counts,
+            poi_counts=counts,
+            site_image_path=site_image_path,
+            logo_path="app/assets/logo_neto.png",
             output_path=pdf_path,
         )
 
@@ -74,7 +87,9 @@ async def generate_pdf(
         with open(pdf_path, "rb") as f:
             pdf_bytes = f.read()
 
-    # El temp dir ya se borró, pero el PDF vive en memoria
+    # -------------------------------
+    # Respuesta binaria
+    # -------------------------------
     return StreamingResponse(
         BytesIO(pdf_bytes),
         media_type="application/pdf",
