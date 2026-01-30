@@ -1,0 +1,5 @@
+[build]
+builder = "NIXPACKS"
+
+[build.env]
+PLOTLY_GET_CHROME = "true"
