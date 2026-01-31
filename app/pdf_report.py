@@ -36,7 +36,66 @@ def _decision_colors(decision: str):
     if d == "EVALUAR":
         return YELLOW_BG, YELLOW_TX
     return RED_BG, RED_TX
+def _delta_colors(delta_str: str):
+    """
+    Decide colores según el delta en texto (+10%, -5%, -)
+    """
+    if not delta_str or delta_str == "-":
+        return None, None
 
+    try:
+        val = int(delta_str.replace("%", "").replace("+", ""))
+    except Exception:
+        return None, None
+
+    if val >= 10:
+        return GREEN_BG, GREEN_TX
+    if val <= -30:
+        return RED_BG, RED_TX
+    return YELLOW_BG, YELLOW_TX
+
+def _build_benchmark_table(benchmark_table, styles):
+    """
+    benchmark_table:
+    [
+      ["Variable", "Benchmark regional", "Sitio", "Δ vs benchmark"],
+      ...
+    ]
+    """
+
+    data = []
+    styles_cmds = [
+        ("BACKGROUND", (0,0), (-1,0), NETO_BLUE),
+        ("TEXTCOLOR", (0,0), (-1,0), white),
+        ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+        ("GRID", (0,0), (-1,-1), 0.25, HexColor("#666")),
+        ("ALIGN", (1,1), (-1,-1), "CENTER"),
+        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+        ("PADDING", (0,0), (-1,-1), 6),
+    ]
+
+    for i, row in enumerate(benchmark_table):
+        data.append(row)
+
+        # pintar solo filas de datos
+        if i == 0:
+            continue
+
+        delta = row[3]
+        bg, tx = _delta_colors(delta)
+
+        if bg:
+            styles_cmds.append(("BACKGROUND", (3, i), (3, i), bg))
+            styles_cmds.append(("TEXTCOLOR", (3, i), (3, i), tx))
+            styles_cmds.append(("FONTNAME", (3, i), (3, i), "Helvetica-Bold"))
+
+    t = Table(
+        data,
+        colWidths=[6.0*cm, 4.0*cm, 4.0*cm, 3.2*cm]
+    )
+    t.setStyle(TableStyle(styles_cmds))
+
+    return t
 
 def _fmt(val):
     if val is None or (isinstance(val, float) and np.isnan(val)):
@@ -272,5 +331,22 @@ def generate_expansion_pdf(
     story.append(Spacer(1, 18))
     story.append(Paragraph("Tienda NETO más cercana", styles["NetoHeader"]))
     story.append(_build_tienda_neto_table(payload))
+    # ================= BENCHMARK REGIONAL =================
+    benchmark_table = payload.get("benchmark_table")
+
+    if benchmark_table:
+        story.append(Spacer(1, 18))
+        story.append(Paragraph("Benchmark regional vs sitio", styles["NetoHeader"]))
+        story.append(
+            _build_benchmark_table(
+                benchmark_table=benchmark_table,
+                styles=styles
+            )
+        )
+
+
+
+
+
 
     doc.build(story)
