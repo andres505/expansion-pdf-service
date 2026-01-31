@@ -69,25 +69,24 @@ def build_benchmark_table(
 
     [
       ["Variable", "Benchmark regional", "Sitio", "Δ vs benchmark"],
-      ["Población total", "9,264", "242,307", "+2515%"],
+      ["Población total", "77,555", "1,173,351", "+1412%"],
       ...
     ]
     """
 
     # ----------------------------------------------
-    # Resolver región y vector
+    # Resolver región y vector regional
     # ----------------------------------------------
     region_name = payload.get("region")
     region_vector = get_region_vector(region_name)
 
     profile_eq = (
-        region_vector
-        .get("profile_equilibrio", {})
+        region_vector.get("profile_equilibrio", {})
         if region_vector else {}
     )
 
     # ----------------------------------------------
-    # Variables por defecto (alineadas a tu diseño)
+    # Variables por defecto
     # ----------------------------------------------
     if variables_map is None:
         variables_map = {
@@ -108,19 +107,19 @@ def build_benchmark_table(
             # GENERADORES COMERCIALES
             # -----------------------
             "Generadores comerciales totales": {
-                "payload": "total_lugares",
+                "payload": "generadores_total",
                 "vector": "total_lugares"
             },
             "Escuelas": {
-                "payload": "primary_school",
+                "payload": "generadores_educacion_count",
                 "vector": "primary_school"
             },
             "Hospitales": {
-                "payload": "hospital",
+                "payload": "generadores_salud_count",
                 "vector": "hospital"
             },
             "Restaurantes": {
-                "payload": "restaurant",
+                "payload": "generadores_consumo_count",
                 "vector": "restaurant"
             },
 
@@ -128,12 +127,12 @@ def build_benchmark_table(
             # COMPETENCIA
             # -----------------------
             "Tiendas 3B": {
-                "payload": "TIENDAS_3B",
+                "payload": "competencia_tiendas_3b",
                 "vector": "TIENDAS_3B"
             },
 
             # -----------------------
-            # INTEGRACIÓN
+            # INTEGRACIÓN COMERCIAL
             # -----------------------
             "Integración comercial": {
                 "payload": "integracion_score",
