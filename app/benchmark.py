@@ -14,9 +14,7 @@ def _safe_float(x):
         if x is None:
             return None
         if isinstance(x, str):
-            return None
-        if math.isnan(x):
-            return None
+            x = x.replace(",", "")
         return float(x)
     except Exception:
         return None
@@ -65,17 +63,17 @@ def build_benchmark_table(
     variables_map: Dict[str, Dict[str, str]] | None = None,
 ) -> List[List[str]]:
     """
-    Devuelve una tabla lista para PDF:
+    Devuelve una tabla lista para PDF o API:
 
     [
       ["Variable", "Benchmark regional", "Sitio", "Δ vs benchmark"],
-      ["Población total", "77,555", "1,173,351", "+1412%"],
+      ["Población total", "77,555", "1,173,351", "+1413%"],
       ...
     ]
     """
 
     # ----------------------------------------------
-    # Resolver región y vector regional
+    # Resolver región y vector
     # ----------------------------------------------
     region_name = payload.get("region")
     region_vector = get_region_vector(region_name)
@@ -86,7 +84,7 @@ def build_benchmark_table(
     )
 
     # ----------------------------------------------
-    # Variables por defecto
+    # VARIABLES MAP CORRECTO (ALINEADO A PAYLOAD REAL)
     # ----------------------------------------------
     if variables_map is None:
         variables_map = {
@@ -107,19 +105,19 @@ def build_benchmark_table(
             # GENERADORES COMERCIALES
             # -----------------------
             "Generadores comerciales totales": {
-                "payload": "generadores_total",
+                "payload": "total_lugares",
                 "vector": "total_lugares"
             },
             "Escuelas": {
-                "payload": "generadores_educacion_count",
+                "payload": "primary_school",
                 "vector": "primary_school"
             },
             "Hospitales": {
-                "payload": "generadores_salud_count",
+                "payload": "hospital",
                 "vector": "hospital"
             },
             "Restaurantes": {
-                "payload": "generadores_consumo_count",
+                "payload": "restaurant",
                 "vector": "restaurant"
             },
 
@@ -127,7 +125,7 @@ def build_benchmark_table(
             # COMPETENCIA
             # -----------------------
             "Tiendas 3B": {
-                "payload": "competencia_tiendas_3b",
+                "payload": "TIENDAS_3B",      # puede no venir → "-"
                 "vector": "TIENDAS_3B"
             },
 
@@ -155,8 +153,6 @@ def build_benchmark_table(
 
         if vector_key == "__HARDCODE_80__":
             bench_val = 80
-        elif vector_key is None:
-            bench_val = None
         else:
             bench_val = profile_eq.get(vector_key)
 
