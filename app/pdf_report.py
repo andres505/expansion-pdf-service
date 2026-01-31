@@ -5,7 +5,7 @@ from reportlab.lib.colors import HexColor, white
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Table, TableStyle,
-    Image as RLImage, Spacer, PageBreak
+    Image as RLImage, Spacer
 )
 from reportlab.lib.units import cm
 import numpy as np
@@ -53,6 +53,12 @@ def _fmt_km(val):
         return "-"
 
 
+def _safe(val):
+    if val in [None, "", "nan"]:
+        return "-"
+    return val
+
+
 def _build_styles():
     styles = getSampleStyleSheet()
 
@@ -67,17 +73,6 @@ def _build_styles():
     add(ParagraphStyle("NetoSmall", fontSize=8.3, leading=11))
 
     return styles
-
-
-def _logo_flowable(path, max_w=4.2*cm, max_h=1.2*cm):
-    if not path or not os.path.exists(path):
-        return Table([["LOGO"]], colWidths=[max_w], rowHeights=[max_h])
-
-    img = RLImage(path)
-    scale = min(max_w / img.imageWidth, max_h / img.imageHeight)
-    img.drawWidth = img.imageWidth * scale
-    img.drawHeight = img.imageHeight * scale
-    return img
 
 
 def _decision_block(title, d, styles):
@@ -157,6 +152,28 @@ def _build_counts_table(counts):
     return t
 
 
+def _build_tienda_neto_table(payload):
+    data = [
+        ["Variable", "Valor"],
+        ["ID tienda", _safe(payload.get("id_tienda_cercana"))],
+        ["Distancia (km)", _fmt_km(payload.get("distancia_tienda_cercana_km"))],
+        ["Ventas sin impuestos", _fmt(payload.get("tienda_cercanaVenta_Sin_Impuestos"))],
+        ["Transacciones", _fmt(payload.get("tienda_cercanaTransacciones"))],
+        ["Ticket promedio", _fmt(payload.get("tienda_cercanaTicket_Promedio"))],
+        ["Prom. monto sin imp.", _fmt(payload.get("tienda_cercanaProm_Monto_Sin_Imp"))],
+    ]
+
+    t = Table(data, colWidths=[8.0*cm, 9.2*cm])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,0), NETO_BLUE),
+        ("TEXTCOLOR", (0,0), (-1,0), white),
+        ("GRID", (0,0), (-1,-1), 0.25, HexColor("#666")),
+        ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+        ("PADDING", (0,0), (-1,-1), 6),
+    ]))
+    return t
+
+
 # ======================================================
 # MAIN PDF
 # ======================================================
@@ -189,12 +206,8 @@ def generate_expansion_pdf(
     story = []
 
     # ================= HEADER =================
-    logo = _logo_flowable(logo_path)
     title = Paragraph("Evaluación de sitio – Expansión NETO", styles["NetoTitle"])
-
-    header = Table([[logo, title]], colWidths=[4.5*cm, 12.7*cm])
-    header.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "MIDDLE")]))
-    story += [header]
+    story.append(title)
 
     subtitle = Paragraph(
         f"""
@@ -232,7 +245,7 @@ def generate_expansion_pdf(
 
     story.append(Spacer(1, 14))
 
-    # ================= EVALUACIÓN DEL SITIO =================
+    # ================= EVALUACIÓN =================
     story.append(Paragraph("Evaluación del sitio", styles["NetoHeader"]))
 
     PHOTO_W = MAP_W
@@ -254,5 +267,10 @@ def generate_expansion_pdf(
         colWidths=[PHOTO_W, 0.6*cm, 8.0*cm],
         style=[("VALIGN", (0,0), (-1,-1), "TOP")]
     ))
+
+    # ================= TIENDA NETO =================
+    story.append(Spacer(1, 18))
+    story.append(Paragraph("Tienda NETO más cercana", styles["NetoHeader"]))
+    story.append(_build_tienda_neto_table(payload))
 
     doc.build(story)
