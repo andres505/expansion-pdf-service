@@ -4,6 +4,7 @@ from io import BytesIO
 import json
 import os
 import tempfile
+from app.benchmark import build_benchmark_table
 
 from app.places_map import generate_places_map_in_memory
 from app.pdf_report import generate_expansion_pdf
@@ -117,3 +118,36 @@ async def generate_pdf(
             "Content-Disposition": f'attachment; filename="evaluacion_{folio}.pdf"'
         },
     )
+@app.post("/benchmark-preview")
+async def benchmark_preview(
+    payload_flat: str = Form(...),
+):
+    """
+    Endpoint de diagnóstico:
+    - payload_flat: JSON string (wrapper completo desde n8n)
+    - devuelve tabla benchmark calculada (JSON)
+    """
+
+    body = json.loads(payload_flat)
+
+    payload_flat_data = body.get("payload_flat", {})
+    levantamiento = body.get("levantamiento", {})
+
+    if isinstance(levantamiento, str):
+        try:
+            levantamiento = json.loads(levantamiento)
+        except Exception:
+            levantamiento = {}
+
+    payload = {
+        **levantamiento,
+        **payload_flat_data,
+    }
+
+    table = build_benchmark_table(payload=payload)
+
+    return {
+        "status": "ok",
+        "region": payload.get("region"),
+        "benchmark_table": table
+    }
