@@ -5,7 +5,7 @@ from reportlab.lib.colors import HexColor, white
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Table, TableStyle,
-    Image as RLImage, Spacer
+    Image as RLImage, Spacer, PageBreak
 )
 from reportlab.lib.units import cm
 import numpy as np
@@ -36,13 +36,11 @@ def _decision_colors(decision: str):
     if d == "EVALUAR":
         return YELLOW_BG, YELLOW_TX
     return RED_BG, RED_TX
+
+
 def _delta_colors(delta_str: str):
-    """
-    Decide colores según el delta en texto (+10%, -5%, -)
-    """
     if not delta_str or delta_str == "-":
         return None, None
-
     try:
         val = int(delta_str.replace("%", "").replace("+", ""))
     except Exception:
@@ -54,15 +52,8 @@ def _delta_colors(delta_str: str):
         return RED_BG, RED_TX
     return YELLOW_BG, YELLOW_TX
 
-def _build_benchmark_table(benchmark_table, styles):
-    """
-    benchmark_table:
-    [
-      ["Variable", "Benchmark regional", "Sitio", "Δ vs benchmark"],
-      ...
-    ]
-    """
 
+def _build_benchmark_table(benchmark_table, styles):
     data = []
     styles_cmds = [
         ("BACKGROUND", (0,0), (-1,0), NETO_BLUE),
@@ -76,26 +67,22 @@ def _build_benchmark_table(benchmark_table, styles):
 
     for i, row in enumerate(benchmark_table):
         data.append(row)
-
-        # pintar solo filas de datos
         if i == 0:
             continue
 
         delta = row[3]
         bg, tx = _delta_colors(delta)
-
         if bg:
-            styles_cmds.append(("BACKGROUND", (3, i), (3, i), bg))
-            styles_cmds.append(("TEXTCOLOR", (3, i), (3, i), tx))
-            styles_cmds.append(("FONTNAME", (3, i), (3, i), "Helvetica-Bold"))
+            styles_cmds += [
+                ("BACKGROUND", (3,i), (3,i), bg),
+                ("TEXTCOLOR", (3,i), (3,i), tx),
+                ("FONTNAME", (3,i), (3,i), "Helvetica-Bold"),
+            ]
 
-    t = Table(
-        data,
-        colWidths=[6.0*cm, 4.0*cm, 4.0*cm, 3.2*cm]
-    )
+    t = Table(data, colWidths=[6.0*cm, 4.0*cm, 4.0*cm, 3.2*cm])
     t.setStyle(TableStyle(styles_cmds))
-
     return t
+
 
 def _fmt(val):
     if val is None or (isinstance(val, float) and np.isnan(val)):
@@ -113,9 +100,7 @@ def _fmt_km(val):
 
 
 def _safe(val):
-    if val in [None, "", "nan"]:
-        return "-"
-    return val
+    return "-" if val in [None, "", "nan"] else val
 
 
 def _build_styles():
@@ -137,20 +122,19 @@ def _build_styles():
 def _decision_block(title, d, styles):
     decision = d.get("decision", "-")
     explanation = d.get("explicacion", "-")
-
     bg, tx = _decision_colors(decision)
 
     badge = Table(
         [[Paragraph(f"<b>{decision}</b>", styles["NetoBody"])]],
         colWidths=[8.0 * cm],
-        rowHeights=[0.9 * cm]
+        rowHeights=[0.9 * cm],
+        style=[
+            ("BACKGROUND", (0,0), (-1,-1), bg),
+            ("TEXTCOLOR", (0,0), (-1,-1), tx),
+            ("LEFTPADDING", (0,0), (-1,-1), 10),
+            ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+        ]
     )
-    badge.setStyle(TableStyle([
-        ("BACKGROUND", (0,0), (-1,-1), bg),
-        ("TEXTCOLOR", (0,0), (-1,-1), tx),
-        ("LEFTPADDING", (0,0), (-1,-1), 10),
-        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
-    ]))
 
     return Table(
         [
@@ -182,22 +166,17 @@ def _img_or_placeholder(path, w, h, text):
 
 def _build_counts_table(counts):
     counts = counts or {}
-    c3b = int(counts.get("3B", 0))
-    cau = int(counts.get("AURRERA", 0))
-    cox = int(counts.get("OXXO", 0))
-    cab = int(counts.get("ABARROTES", 0))
-
     data = [
         ["Categoría", "Cantidad"],
-        ["Competencias directas", str(c3b + cau + cox + cab)],
-        ["Tiendas 3B", c3b],
-        ["Aurrera", cau],
-        ["OXXO", cox],
-        ["Abarrotes", cab],
-        ["Generadores comerciales", counts.get("GENERADOR_COMERCIAL", 0)],
-        ["Escuelas", counts.get("ESCUELA", 0)],
-        ["Iglesias", counts.get("IGLESIA", 0)],
-        ["Otros", counts.get("OTROS", 0)],
+        ["Competencias directas", sum(int(counts.get(k,0)) for k in ["3B","AURRERA","OXXO","ABARROTES"])],
+        ["Tiendas 3B", counts.get("3B",0)],
+        ["Aurrera", counts.get("AURRERA",0)],
+        ["OXXO", counts.get("OXXO",0)],
+        ["Abarrotes", counts.get("ABARROTES",0)],
+        ["Generadores comerciales", counts.get("GENERADOR_COMERCIAL",0)],
+        ["Escuelas", counts.get("ESCUELA",0)],
+        ["Iglesias", counts.get("IGLESIA",0)],
+        ["Otros", counts.get("OTROS",0)],
     ]
 
     t = Table(data, colWidths=[6*cm, 2*cm])
@@ -265,10 +244,9 @@ def generate_expansion_pdf(
     story = []
 
     # ================= HEADER =================
-    title = Paragraph("Evaluación de sitio – Expansión NETO", styles["NetoTitle"])
-    story.append(title)
+    story.append(Paragraph("Evaluación de sitio – Expansión NETO", styles["NetoTitle"]))
 
-    subtitle = Paragraph(
+    story.append(Paragraph(
         f"""
         <b>Folio:</b> {payload.get("id_ubicacion","-")} &nbsp;&nbsp;
         <b>Región:</b> {payload.get("region","-")} &nbsp;&nbsp;
@@ -280,73 +258,57 @@ def generate_expansion_pdf(
         <b>Tipo:</b> {payload.get("tipo_sitio","-")}
         """,
         styles["NetoSubtitle"]
-    )
+    ))
 
-    story += [subtitle, Spacer(1, 6)]
-    story += [Table([[""]], colWidths=[17.2*cm], rowHeights=[0.22*cm],
-                    style=[("BACKGROUND", (0,0), (-1,-1), NETO_ORANGE)])]
-    story += [Spacer(1, 14)]
+    story += [
+        Spacer(1,6),
+        Table([[""]], colWidths=[17.2*cm], rowHeights=[0.22*cm],
+              style=[("BACKGROUND", (0,0), (-1,-1), NETO_ORANGE)]),
+        Spacer(1,14)
+    ]
 
-    # ================= MAPA =================
+    # ================= MAPA (PÁGINA 1) =================
     story.append(Paragraph("Mapa y entorno comercial", styles["NetoHeader"]))
 
-    MAP_W = 9.6 * cm
-    MAP_H = 9.6 * cm
-
-    map_img = RLImage(map_img_path, width=MAP_W, height=MAP_H)
-    counts_tbl = _build_counts_table(poi_counts)
+    MAP_W = 9.0 * cm
+    MAP_H = 9.0 * cm
 
     story.append(Table(
-        [[map_img, Spacer(1,1), counts_tbl]],
+        [[RLImage(map_img_path, MAP_W, MAP_H), Spacer(1,1), _build_counts_table(poi_counts)]],
         colWidths=[MAP_W, 0.6*cm, 8.0*cm],
         style=[("VALIGN", (0,0), (-1,-1), "TOP")]
     ))
 
-    story.append(Spacer(1, 14))
-
-    # ================= EVALUACIÓN =================
+    # ================= EVALUACIÓN (PÁGINA 2) =================
+    story.append(PageBreak())
     story.append(Paragraph("Evaluación del sitio", styles["NetoHeader"]))
 
-    PHOTO_W = MAP_W
-    PHOTO_H = 6.5 * cm
+    photo = _img_or_placeholder(site_image_path, MAP_W, 6.5*cm, "FOTO DEL SITIO")
 
-    photo = _img_or_placeholder(site_image_path, PHOTO_W, PHOTO_H, "FOTO DEL SITIO")
-
-    decisions_stack = Table(
+    decisions = Table(
         [
             [_decision_block("Decisión modelo 1", decision_modelo_1, styles)],
-            [Spacer(1, 10)],
+            [Spacer(1,10)],
             [_decision_block("Decisión modelo 2", decision_modelo_2, styles)],
         ],
         colWidths=[8.0*cm]
     )
 
     story.append(Table(
-        [[photo, Spacer(1,1), decisions_stack]],
-        colWidths=[PHOTO_W, 0.6*cm, 8.0*cm],
+        [[photo, Spacer(1,1), decisions]],
+        colWidths=[MAP_W, 0.6*cm, 8.0*cm],
         style=[("VALIGN", (0,0), (-1,-1), "TOP")]
     ))
 
-    # ================= TIENDA NETO =================
-    story.append(Spacer(1, 18))
-    story.append(Paragraph("Tienda NETO más cercana", styles["NetoHeader"]))
-    story.append(_build_tienda_neto_table(payload))
-    # ================= BENCHMARK REGIONAL =================
+    # ================= BENCHMARK + TIENDA (PÁGINA 3) =================
     benchmark_table = payload.get("benchmark_table")
-
     if benchmark_table:
-        story.append(Spacer(1, 18))
+        story.append(PageBreak())
         story.append(Paragraph("Benchmark regional vs sitio", styles["NetoHeader"]))
-        story.append(
-            _build_benchmark_table(
-                benchmark_table=benchmark_table,
-                styles=styles
-            )
-        )
+        story.append(_build_benchmark_table(benchmark_table, styles))
 
-
-
-
-
+        story.append(Spacer(1,18))
+        story.append(Paragraph("Tienda NETO más cercana", styles["NetoHeader"]))
+        story.append(_build_tienda_neto_table(payload))
 
     doc.build(story)
