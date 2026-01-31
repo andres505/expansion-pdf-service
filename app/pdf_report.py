@@ -4,23 +4,14 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.colors import HexColor, black, white
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Table, TableStyle, Image as RLImage,
-    Spacer, PageBreak
+    SimpleDocTemplate, Paragraph, Table, TableStyle,
+    Image as RLImage, Spacer
 )
 from reportlab.lib.units import cm
 from io import BytesIO
 from pathlib import Path
 import numpy as np
 import os
-import tempfile
-
-# Pillow (opcional, solo para foto del sitio)
-try:
-    from PIL import Image as PILImage, ImageOps
-    _PIL_OK = True
-except Exception:
-    _PIL_OK = False
-
 
 # ======================================================
 # PATHS
@@ -65,29 +56,33 @@ def _fmt(v):
 def _build_styles():
     styles = getSampleStyleSheet()
 
-    styles.add(ParagraphStyle(
-        "Title",
+    def add(ps):
+        if ps.name not in styles.byName:
+            styles.add(ps)
+
+    add(ParagraphStyle(
+        "NetoTitle",
         fontSize=20,
         leading=24,
         textColor=NETO_BLUE
     ))
 
-    styles.add(ParagraphStyle(
-        "Header",
+    add(ParagraphStyle(
+        "NetoHeader",
         fontSize=13,
         leading=16,
         textColor=NETO_BLUE,
         spaceAfter=6
     ))
 
-    styles.add(ParagraphStyle(
-        "Body",
+    add(ParagraphStyle(
+        "NetoBody",
         fontSize=9,
         leading=12
     ))
 
-    styles.add(ParagraphStyle(
-        "Small",
+    add(ParagraphStyle(
+        "NetoSmall",
         fontSize=8,
         leading=10
     ))
@@ -95,29 +90,29 @@ def _build_styles():
     return styles
 
 
-def _img_or_placeholder_from_buf(buf: BytesIO | None, w, h, label):
+def _img_from_buf_or_placeholder(buf: BytesIO | None, w, h, label):
     if buf:
         buf.seek(0)
         return RLImage(buf, width=w, height=h)
 
     t = Table([[label]], colWidths=[w], rowHeights=[h])
     t.setStyle(TableStyle([
-        ("BACKGROUND", (0,0), (-1,-1), LIGHT_GREY),
-        ("ALIGN", (0,0), (-1,-1), "CENTER"),
-        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+        ("BACKGROUND", (0, 0), (-1, -1), LIGHT_GREY),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]))
     return t
 
 
-def _img_or_placeholder_from_path(path: str | None, w, h, label):
+def _img_from_path_or_placeholder(path: str | None, w, h, label):
     if path and os.path.exists(path):
         return RLImage(path, width=w, height=h)
 
     t = Table([[label]], colWidths=[w], rowHeights=[h])
     t.setStyle(TableStyle([
-        ("BACKGROUND", (0,0), (-1,-1), LIGHT_GREY),
-        ("ALIGN", (0,0), (-1,-1), "CENTER"),
-        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+        ("BACKGROUND", (0, 0), (-1, -1), LIGHT_GREY),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]))
     return t
 
@@ -125,10 +120,14 @@ def _img_or_placeholder_from_path(path: str | None, w, h, label):
 def _counts_table(counts: dict | None):
     counts = counts or {}
 
+    comp_directa = sum(
+        int(counts.get(k, 0))
+        for k in ["3B", "AURRERA", "OXXO", "ABARROTES"]
+    )
+
     data = [
         ["Categoría", "Cantidad"],
-        ["Competencias directas",
-         sum(int(counts.get(k, 0)) for k in ["3B", "AURRERA", "OXXO", "ABARROTES"])],
+        ["Competencia directa", comp_directa],
         ["Tiendas 3B", counts.get("3B", 0)],
         ["Aurrera", counts.get("AURRERA", 0)],
         ["OXXO", counts.get("OXXO", 0)],
@@ -139,13 +138,13 @@ def _counts_table(counts: dict | None):
         ["Otros", counts.get("OTROS", 0)],
     ]
 
-    t = Table(data, colWidths=[6*cm, 2*cm])
+    t = Table(data, colWidths=[6 * cm, 2 * cm])
     t.setStyle(TableStyle([
-        ("BACKGROUND", (0,0), (-1,0), NETO_BLUE),
-        ("TEXTCOLOR", (0,0), (-1,0), white),
-        ("GRID", (0,0), (-1,-1), 0.25, black),
-        ("ALIGN", (1,1), (1,-1), "CENTER"),
-        ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+        ("BACKGROUND", (0, 0), (-1, 0), NETO_BLUE),
+        ("TEXTCOLOR", (0, 0), (-1, 0), white),
+        ("GRID", (0, 0), (-1, -1), 0.25, black),
+        ("ALIGN", (1, 1), (1, -1), "CENTER"),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
     ]))
     return t
 
@@ -169,53 +168,58 @@ def generate_expansion_pdf(
     doc = SimpleDocTemplate(
         output_path,
         pagesize=A4,
-        leftMargin=1.6*cm,
-        rightMargin=1.6*cm,
-        topMargin=1.2*cm,
-        bottomMargin=1.2*cm,
+        leftMargin=1.6 * cm,
+        rightMargin=1.6 * cm,
+        topMargin=1.2 * cm,
+        bottomMargin=1.2 * cm,
     )
 
     story = []
 
     # ================= HEADER =================
     resolved_logo = _resolve_path(logo_path)
-    logo = _img_or_placeholder_from_path(
-        resolved_logo, 4.2*cm, 1.2*cm, "LOGO"
+    logo = _img_from_path_or_placeholder(
+        resolved_logo, 4.2 * cm, 1.2 * cm, "LOGO"
     )
 
-    title = Paragraph("Evaluación de sitio – Expansión NETO", styles["Title"])
+    title = Paragraph(
+        "Evaluación de sitio – Expansión NETO",
+        styles["NetoTitle"]
+    )
 
-    header = Table([[logo, title]], colWidths=[5*cm, 12*cm])
+    header = Table([[logo, title]], colWidths=[5 * cm, 12 * cm])
     header.setStyle(TableStyle([
-        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
-        ("LEFTPADDING", (0,0), (-1,-1), 0),
-        ("RIGHTPADDING", (0,0), (-1,-1), 0),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
     ]))
 
     subtitle = Paragraph(
         f"""
-        <b>Folio:</b> {payload.get("id_ubicacion","-")} &nbsp;&nbsp;
-        <b>Región:</b> {payload.get("region","-")} &nbsp;&nbsp;
-        <b>Estado:</b> {payload.get("estado","-")}<br/>
-        <b>Lat:</b> {payload.get("lat","-")} &nbsp;&nbsp;
-        <b>Lon:</b> {payload.get("longitud","-")}
+        <b>Folio:</b> {payload.get("id_ubicacion", "-")} &nbsp;&nbsp;
+        <b>Región:</b> {payload.get("region", "-")} &nbsp;&nbsp;
+        <b>Estado:</b> {payload.get("estado", "-")}<br/>
+        <b>Lat:</b> {payload.get("lat", "-")} &nbsp;&nbsp;
+        <b>Lon:</b> {payload.get("longitud", "-")}
         """,
-        styles["Small"]
+        styles["NetoSmall"]
     )
 
-    bar = Table([[""]], colWidths=[17*cm], rowHeights=[0.25*cm])
-    bar.setStyle(TableStyle([("BACKGROUND", (0,0), (-1,-1), NETO_ORANGE)]))
+    bar = Table([[""]], colWidths=[17 * cm], rowHeights=[0.25 * cm])
+    bar.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), NETO_ORANGE)
+    ]))
 
     story += [header, subtitle, Spacer(1, 6), bar, Spacer(1, 14)]
 
     # ================= MAP + COUNTS =================
-    story.append(Paragraph("Mapa y entorno comercial", styles["Header"]))
+    story.append(Paragraph("Mapa y entorno comercial", styles["NetoHeader"]))
 
-    MAP_W = 9.5*cm
-    MAP_H = 9.5*cm
-    RIGHT_W = 7.5*cm
+    MAP_W = 9.5 * cm
+    MAP_H = 9.5 * cm
+    RIGHT_W = 7.5 * cm
 
-    map_img = _img_or_placeholder_from_buf(
+    map_img = _img_from_buf_or_placeholder(
         map_image_buf, MAP_W, MAP_H, "MAPA"
     )
 
@@ -223,31 +227,31 @@ def generate_expansion_pdf(
 
     row1 = Table([[map_img, counts_tbl]], colWidths=[MAP_W, RIGHT_W])
     row1.setStyle(TableStyle([
-        ("VALIGN", (0,0), (-1,-1), "TOP"),
-        ("LEFTPADDING", (0,0), (-1,-1), 0),
-        ("RIGHTPADDING", (0,0), (-1,-1), 6),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
     ]))
 
     story += [row1, Spacer(1, 16)]
 
     # ================= SITE IMAGE =================
-    story.append(Paragraph("Imagen del sitio", styles["Header"]))
+    story.append(Paragraph("Imagen del sitio", styles["NetoHeader"]))
 
-    site_img = _img_or_placeholder_from_path(
-        site_image_path, MAP_W, 6*cm, "FOTO DEL SITIO"
+    site_img = _img_from_path_or_placeholder(
+        site_image_path, MAP_W, 6 * cm, "FOTO DEL SITIO"
     )
 
     story += [site_img, Spacer(1, 20)]
 
     # ================= DECISIONS =================
-    story.append(Paragraph("Decisiones de evaluación", styles["Header"]))
+    story.append(Paragraph("Decisiones de evaluación", styles["NetoHeader"]))
 
-    def decision_block(title, d):
+    def decision_block(title_txt, d):
         return Table([
-            [Paragraph(f"<b>{title}</b>", styles["Body"])],
-            [Paragraph(f"<b>{d.get('decision','-')}</b>", styles["Body"])],
-            [Paragraph(d.get("explicacion","-"), styles["Small"])],
-        ], colWidths=[17*cm])
+            [Paragraph(f"<b>{title_txt}</b>", styles["NetoBody"])],
+            [Paragraph(f"<b>{d.get('decision', '-')}</b>", styles["NetoBody"])],
+            [Paragraph(d.get("explicacion", "-"), styles["NetoSmall"])],
+        ], colWidths=[17 * cm])
 
     story.append(decision_block("Modelo 1", decision_modelo_1))
     story.append(Spacer(1, 10))
