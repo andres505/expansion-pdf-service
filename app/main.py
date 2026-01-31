@@ -19,55 +19,75 @@ async def generate_pdf(
 ):
     """
     Endpoint principal:
-    - payload_flat: JSON string
+    - payload_flat: JSON string (wrapper completo desde n8n)
     - places_csv: CSV Google Places
     - site_image: foto del sitio (opcional)
     - devuelve PDF binario
     """
 
-    # -------------------------------
-    # Parse payload
-    # -------------------------------
-    payload = json.loads(payload_flat)
+    # -------------------------------------------------
+    # Parse payload completo recibido desde n8n
+    # -------------------------------------------------
+    body = json.loads(payload_flat)
+
+    payload_flat_data = body.get("payload_flat", {})
+    levantamiento = body.get("levantamiento", {})
+
+    # levantamiento puede venir como string JSON
+    if isinstance(levantamiento, str):
+        try:
+            levantamiento = json.loads(levantamiento)
+        except Exception:
+            levantamiento = {}
+
+    # payload final que consume el PDF (FLAT)
+    payload = {
+        **levantamiento,
+        **payload_flat_data,  # prioridad a métricas calculadas
+    }
+
     folio = payload.get("id_ubicacion", "TEST")
 
-    # decisiones (por ahora dummy o pasadas desde n8n luego)
-    decision_modelo_1 = payload.get("decision_modelo_1", {
+    # -------------------------------------------------
+    # Decisiones (ya vienen bien desde n8n)
+    # -------------------------------------------------
+    decision_modelo_1 = body.get("decision_modelo_1", {
         "decision": "-",
         "explicacion": "-"
     })
-    decision_modelo_2 = payload.get("decision_modelo_2", {
+
+    decision_modelo_2 = body.get("decision_modelo_2", {
         "decision": "-",
         "explicacion": "-"
     })
 
     with tempfile.TemporaryDirectory() as tmp:
-        # -------------------------------
-        # Guardar CSV temporal
-        # -------------------------------
+        # -------------------------------------------------
+        # Guardar CSV Google Places
+        # -------------------------------------------------
         csv_path = os.path.join(tmp, "places.csv")
         with open(csv_path, "wb") as f:
             f.write(await places_csv.read())
 
-        # -------------------------------
+        # -------------------------------------------------
         # Generar mapa + conteos
-        # -------------------------------
+        # -------------------------------------------------
         map_buf, counts = generate_places_map_in_memory(
             csv_path=csv_path
         )
 
-        # -------------------------------
+        # -------------------------------------------------
         # Guardar imagen del sitio (opcional)
-        # -------------------------------
+        # -------------------------------------------------
         site_image_path = None
         if site_image:
             site_image_path = os.path.join(tmp, site_image.filename)
             with open(site_image_path, "wb") as f:
                 f.write(await site_image.read())
 
-        # -------------------------------
+        # -------------------------------------------------
         # Generar PDF
-        # -------------------------------
+        # -------------------------------------------------
         pdf_path = os.path.join(tmp, f"evaluacion_{folio}.pdf")
 
         generate_expansion_pdf(
@@ -81,15 +101,15 @@ async def generate_pdf(
             output_path=pdf_path,
         )
 
-        # -------------------------------
+        # -------------------------------------------------
         # Leer PDF a memoria
-        # -------------------------------
+        # -------------------------------------------------
         with open(pdf_path, "rb") as f:
             pdf_bytes = f.read()
 
-    # -------------------------------
+    # -------------------------------------------------
     # Respuesta binaria
-    # -------------------------------
+    # -------------------------------------------------
     return StreamingResponse(
         BytesIO(pdf_bytes),
         media_type="application/pdf",
