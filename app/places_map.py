@@ -53,6 +53,40 @@ def bbox_from_radius(lat, lon, radius_m):
         lon_max=lon + d
     )
 
+
+def parse_types_to_list(x):
+    """
+    `types` puede venir como:
+      - lista real
+      - string tipo "['school', 'point_of_interest']"
+      - string "school,point_of_interest"
+      - NaN / None
+    """
+    if x is None:
+        return []
+    if isinstance(x, (list, tuple, set)):
+        return [str(t).strip().lower() for t in x if str(t).strip()]
+
+    s = str(x).strip()
+    if not s or s.lower() == "nan":
+        return []
+
+    # intento 1: literal_eval para strings estilo lista
+    try:
+        v = ast.literal_eval(s)
+        if isinstance(v, (list, tuple, set)):
+            return [str(t).strip().lower() for t in v if str(t).strip()]
+    except Exception:
+        pass
+
+    # intento 2: CSV simple separado por coma
+    if "," in s:
+        return [t.strip().lower() for t in s.split(",") if t.strip()]
+
+    # intento 3: single token
+    return [s.lower()]
+
+
 # =====================================================
 # MAIN
 # =====================================================
@@ -63,44 +97,106 @@ def generate_places_map_in_memory(
     radios=DEFAULT_RADIOS,
 ):
     """
-    Genera un mapa PNG en memoria (BytesIO) con:
-    - puntos clasificados visualmente
-    - radios reales
-    - bounds exactos
-    - conteos conceptuales:
-        * Generadores de abasto
-        * Generadores de flujo
-        * Otros
-
     Retorna:
-        buf (BytesIO), counts (dict)
+      - map_image_buf
+      - counts dict compatible con pdf_report:
+        {
+          "Competencias directas": int,
+          "Tiendas 3B": int,
+          "Aurrera": int,
+          "OXXO": int,
+          "Abarrotes": int,
+          "Escuelas": int,
+          "Iglesias": int,
+          "Generadores de flujo": int,
+          "Generadores de abasto": int,
+          "Otros": int,
+        }
     """
 
-    # -------------------------------------------------
-    # LOAD CSV
-    # -------------------------------------------------
+    # ---------------- LOAD ----------------
     df = pd.read_csv(csv_path)
 
     lat_col = pick_col(df, ["place_lat", "lat", "latitude"])
     lon_col = pick_col(df, ["place_lon", "lon", "lng", "longitude"])
     name_col = pick_col(df, ["name", "nombre"])
+    types_col = pick_col(df, ["types", "place_types", "tipo", "type", "Types"])
+
+    qlat_col = pick_col(df, ["query_lat", "q_lat", "lat_query"])
+    qlon_col = pick_col(df, ["query_lon", "q_lon", "lng_query", "lon_query"])
 
     if not lat_col or not lon_col:
         raise ValueError("No se encontraron columnas de latitud/longitud")
+    if not name_col:
+        raise ValueError("No se encontró columna de nombre (name/nombre)")
+    if not types_col:
+        # No tronamos: solo evitamos flujo/abasto por types
+        types_col = None
 
     df[lat_col] = pd.to_numeric(df[lat_col], errors="coerce")
     df[lon_col] = pd.to_numeric(df[lon_col], errors="coerce")
     df = df.dropna(subset=[lat_col, lon_col])
 
-    main_lat = df[pick_col(df, ["query_lat"])].iloc[0]
-    main_lon = df[pick_col(df, ["query_lon"])].iloc[0]
+    if not qlat_col or not qlon_col:
+        # fallback: si no vienen query_lat/query_lon, usa el centroide de los puntos
+        main_lat = float(df[lat_col].mean())
+        main_lon = float(df[lon_col].mean())
+    else:
+        main_lat = float(df[qlat_col].iloc[0])
+        main_lon = float(df[qlon_col].iloc[0])
 
-    # -------------------------------------------------
-    # CLASIFICACIÓN VISUAL (MAPA) — SE MANTIENE
-    # -------------------------------------------------
-    def classify(row):
-        name = str(row.get(name_col, "")).lower()
-        types = str(row.get("types", "")).lower()
+    # ---------------- NORMALIZACIONES ÚNICAS ----------------
+    df["name_norm"] = df[name_col].astype(str).str.lower().fillna("")
+
+    if types_col:
+        df["types_list"] = df[types_col].apply(parse_types_to_list)
+    else:
+        df["types_list"] = [[] for _ in range(len(df))]
+
+    # para chequeos rápidos
+    df["types_set"] = df["types_list"].apply(lambda xs: set(xs) if isinstance(xs, list) else set())
+
+    # ---------------- CLASIFICACIÓN CONCEPTUAL ----------------
+    ABASTO_KEYWORDS = [
+        "neto", "3b", "aurrera", "bodega", "chedraui", "soriana",
+        "walmart", "dunosusa", "abarrotes", "mini super",
+        "miscelanea", "miscelánea",
+        "carnicer", "polleri", "pescader",
+        "verduler", "fruter", "tortiller", "panader"
+    ]
+
+    ABASTO_TYPES = {
+        "supermarket", "grocery_or_supermarket",
+        "convenience_store", "food_store"
+    }
+
+    FLUJO_TYPES = {
+        "school", "university", "church",
+        "hospital", "clinic",
+        "bank", "atm",
+        "gym", "park", "stadium",
+        "shopping_mall",
+        "restaurant", "cafe",
+        "meal_takeaway", "meal_delivery"
+    }
+
+    def classify_conceptual(row):
+        name = row["name_norm"]
+        types = row["types_set"]
+
+        if any(k in name for k in ABASTO_KEYWORDS) or (types & ABASTO_TYPES):
+            return "ABASTO"
+        if types & FLUJO_TYPES:
+            return "FLUJO"
+        return "OTROS"
+
+    df["generador_tipo"] = df.apply(classify_conceptual, axis=1)
+
+    # ---------------- CLASIFICACIÓN VISUAL (MAPA + COUNTS DE COMPETENCIA) ----------------
+    # Importante: usa types_set (no string) para escuela/iglesia, y name_norm para marcas.
+    def classify_visual(row):
+        name = row["name_norm"]
+        types = row["types_set"]
 
         if "neto" in name:
             return "NETO"
@@ -113,107 +209,52 @@ def generate_places_map_in_memory(
         if "abarrot" in name:
             return "ABARROTES"
 
-        if any(x in name for x in ["tortill", "carnicer", "verdura", "fruta"]) or "restaurant" in types:
-            return "GENERADOR_COMERCIAL"
-
-        if "school" in types:
+        if "school" in types or "university" in types:
             return "ESCUELA"
         if "church" in types:
             return "IGLESIA"
 
         return "OTROS"
 
-    df["grupo"] = df.apply(classify, axis=1)
+    df["grupo"] = df.apply(classify_visual, axis=1)
 
-    # -------------------------------------------------
-    # CLASIFICACIÓN CONCEPTUAL (ABASTO / FLUJO)
-    # -------------------------------------------------
-    df["name_norm"] = df[name_col].astype(str).str.lower()
-
-    def parse_types(x):
-        try:
-            return ast.literal_eval(x)
-        except Exception:
-            return []
-
-    df["types_list"] = df["types"].apply(parse_types)
-
-    ABASTO_KEYWORDS = [
-        "neto", "3b", "aurrera", "bodega", "chedraui", "soriana",
-        "walmart", "dunosusa", "abarrotes", "depósito",
-        "mini super", "miscelanea", "miscelánea",
-        "super", "tienda de abarrotes",
-        "carnicer", "polleri", "pescader",
-        "verduler", "fruter", "tortiller", "panader"
-    ]
-
-    ABASTO_TYPES = {
-        "supermarket",
-        "grocery_or_supermarket",
-        "convenience_store",
-        "food_store"
-    }
-
-    FLUJO_TYPES = {
-        "school", "university", "church",
-        "hospital", "health", "clinic",
-        "office", "bank", "atm",
-        "post_office", "police", "city_hall",
-        "gym", "park", "stadium",
-        "movie_theater", "shopping_mall",
-        "restaurant", "cafe",
-        "meal_takeaway", "meal_delivery"
-    }
-
-    def classify_generator(row):
-        name = row["name_norm"]
-        types = set(row["types_list"])
-
-        if any(k in name for k in ABASTO_KEYWORDS):
-            return "ABASTO"
-
-        if types & ABASTO_TYPES:
-            return "ABASTO"
-
-        if types & FLUJO_TYPES:
-            return "FLUJO"
-
-        return "OTROS"
-
-    df["generador_tipo"] = df.apply(classify_generator, axis=1)
-
-    # -------------------------------------------------
-    # CONTEO FINAL (TABLA PDF)
-    # -------------------------------------------------
+    # ---------------- COUNTS (CONTRATO PDF) ----------------
     counts = {
-        "Generadores de abasto": int((df["generador_tipo"] == "ABASTO").sum()),
+        "Tiendas 3B": int((df["grupo"] == "3B").sum()),
+        "Aurrera": int((df["grupo"] == "AURRERA").sum()),
+        "OXXO": int((df["grupo"] == "OXXO").sum()),
+        "Abarrotes": int((df["grupo"] == "ABARROTES").sum()),
+        "Escuelas": int((df["grupo"] == "ESCUELA").sum()),
+        "Iglesias": int((df["grupo"] == "IGLESIA").sum()),
         "Generadores de flujo": int((df["generador_tipo"] == "FLUJO").sum()),
+        "Generadores de abasto": int((df["generador_tipo"] == "ABASTO").sum()),
         "Otros": int((df["generador_tipo"] == "OTROS").sum()),
     }
 
-    # -------------------------------------------------
-    # ESTILOS (MAPA) — SIN CAMBIOS
-    # -------------------------------------------------
+    counts["Competencias directas"] = (
+        counts["Tiendas 3B"]
+        + counts["Aurrera"]
+        + counts["OXXO"]
+        + counts["Abarrotes"]
+    )
+
+    # ---------------- MAPA ----------------
     STYLE = {
         "NETO": dict(color="#FFD700", size=16),
         "3B": dict(color="#D32F2F", size=12),
         "AURRERA": dict(color="#2E7D32", size=12),
         "OXXO": dict(color="#F57C00", size=12),
         "ABARROTES": dict(color="#F57C00", size=12),
-        "GENERADOR_COMERCIAL": dict(color="#1976D2", size=9),
         "ESCUELA": dict(color="#8E24AA", size=9),
         "IGLESIA": dict(color="#8E24AA", size=9),
         "OTROS": dict(color="#1976D2", size=8),
     }
 
     DRAW_ORDER = [
-        "OTROS", "GENERADOR_COMERCIAL", "ESCUELA", "IGLESIA",
+        "OTROS", "ESCUELA", "IGLESIA",
         "3B", "AURRERA", "OXXO", "ABARROTES", "NETO"
     ]
 
-    # -------------------------------------------------
-    # MAPA
-    # -------------------------------------------------
     fig = go.Figure()
 
     for g in DRAW_ORDER:
@@ -265,17 +306,8 @@ def generate_places_map_in_memory(
         legend=dict(orientation="h")
     )
 
-    # -------------------------------------------------
-    # EXPORT PNG EN MEMORIA
-    # -------------------------------------------------
     buf = io.BytesIO()
-    fig.write_image(
-        buf,
-        format="png",
-        width=image_size,
-        height=image_size,
-        scale=2
-    )
+    fig.write_image(buf, format="png", width=image_size, height=image_size, scale=2)
     buf.seek(0)
 
     return buf, counts
