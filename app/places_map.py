@@ -2,6 +2,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import math
 import io
+import ast
 
 # =====================================================
 # CONFIG
@@ -63,10 +64,13 @@ def generate_places_map_in_memory(
 ):
     """
     Genera un mapa PNG en memoria (BytesIO) con:
-    - puntos clasificados
+    - puntos clasificados visualmente
     - radios reales
     - bounds exactos
-    - conteos por grupo
+    - conteos conceptuales:
+        * Generadores de abasto
+        * Generadores de flujo
+        * Otros
 
     Retorna:
         buf (BytesIO), counts (dict)
@@ -92,7 +96,7 @@ def generate_places_map_in_memory(
     main_lon = df[pick_col(df, ["query_lon"])].iloc[0]
 
     # -------------------------------------------------
-    # CLASIFICACIÓN
+    # CLASIFICACIÓN VISUAL (MAPA) — SE MANTIENE
     # -------------------------------------------------
     def classify(row):
         name = str(row.get(name_col, "")).lower()
@@ -120,10 +124,75 @@ def generate_places_map_in_memory(
         return "OTROS"
 
     df["grupo"] = df.apply(classify, axis=1)
-    counts = df["grupo"].value_counts().to_dict()
 
     # -------------------------------------------------
-    # ESTILOS
+    # CLASIFICACIÓN CONCEPTUAL (ABASTO / FLUJO)
+    # -------------------------------------------------
+    df["name_norm"] = df[name_col].astype(str).str.lower()
+
+    def parse_types(x):
+        try:
+            return ast.literal_eval(x)
+        except Exception:
+            return []
+
+    df["types_list"] = df["types"].apply(parse_types)
+
+    ABASTO_KEYWORDS = [
+        "neto", "3b", "aurrera", "bodega", "chedraui", "soriana",
+        "walmart", "dunosusa", "abarrotes", "depósito",
+        "mini super", "miscelanea", "miscelánea",
+        "super", "tienda de abarrotes",
+        "carnicer", "polleri", "pescader",
+        "verduler", "fruter", "tortiller", "panader"
+    ]
+
+    ABASTO_TYPES = {
+        "supermarket",
+        "grocery_or_supermarket",
+        "convenience_store",
+        "food_store"
+    }
+
+    FLUJO_TYPES = {
+        "school", "university", "church",
+        "hospital", "health", "clinic",
+        "office", "bank", "atm",
+        "post_office", "police", "city_hall",
+        "gym", "park", "stadium",
+        "movie_theater", "shopping_mall",
+        "restaurant", "cafe",
+        "meal_takeaway", "meal_delivery"
+    }
+
+    def classify_generator(row):
+        name = row["name_norm"]
+        types = set(row["types_list"])
+
+        if any(k in name for k in ABASTO_KEYWORDS):
+            return "ABASTO"
+
+        if types & ABASTO_TYPES:
+            return "ABASTO"
+
+        if types & FLUJO_TYPES:
+            return "FLUJO"
+
+        return "OTROS"
+
+    df["generador_tipo"] = df.apply(classify_generator, axis=1)
+
+    # -------------------------------------------------
+    # CONTEO FINAL (TABLA PDF)
+    # -------------------------------------------------
+    counts = {
+        "Generadores de abasto": int((df["generador_tipo"] == "ABASTO").sum()),
+        "Generadores de flujo": int((df["generador_tipo"] == "FLUJO").sum()),
+        "Otros": int((df["generador_tipo"] == "OTROS").sum()),
+    }
+
+    # -------------------------------------------------
+    # ESTILOS (MAPA) — SIN CAMBIOS
     # -------------------------------------------------
     STYLE = {
         "NETO": dict(color="#FFD700", size=16),
@@ -160,7 +229,6 @@ def generate_places_map_in_memory(
             name=g
         ))
 
-    # Sitio evaluado
     fig.add_trace(go.Scattermapbox(
         lat=[main_lat],
         lon=[main_lon],
@@ -169,7 +237,6 @@ def generate_places_map_in_memory(
         name="Sitio evaluado"
     ))
 
-    # Radios
     for r in radios:
         clats, clons = circle_coords(main_lat, main_lon, r)
         fig.add_trace(go.Scattermapbox(
@@ -180,7 +247,6 @@ def generate_places_map_in_memory(
             name=f"{r} m"
         ))
 
-    # Bounds exactos
     bbox = bbox_from_radius(main_lat, main_lon, max(radios))
 
     fig.update_layout(
