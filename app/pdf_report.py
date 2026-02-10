@@ -164,28 +164,34 @@ def _img_or_placeholder(path, w, h, text):
     )
 
 
-def _build_counts_table(counts):
+# ======================================================
+# COUNTS TABLE (AJUSTADA AL NUEVO CONTRATO)
+# ======================================================
+def _build_counts_table(counts: dict):
     counts = counts or {}
+
     data = [
         ["Categoría", "Cantidad"],
-        ["Competencias directas", sum(int(counts.get(k,0)) for k in ["3B","AURRERA","OXXO","ABARROTES"])],
-        ["Tiendas 3B", counts.get("3B",0)],
-        ["Aurrera", counts.get("AURRERA",0)],
-        ["OXXO", counts.get("OXXO",0)],
-        ["Abarrotes", counts.get("ABARROTES",0)],
-        ["Generadores comerciales", counts.get("GENERADOR_COMERCIAL",0)],
-        ["Escuelas", counts.get("ESCUELA",0)],
-        ["Iglesias", counts.get("IGLESIA",0)],
-        ["Otros", counts.get("OTROS",0)],
+        ["Competencias directas", counts.get("Competencias directas", 0)],
+        ["Tiendas 3B", counts.get("Tiendas 3B", 0)],
+        ["Aurrera", counts.get("Aurrera", 0)],
+        ["OXXO", counts.get("OXXO", 0)],
+        ["Abarrotes", counts.get("Abarrotes", 0)],
+        ["Escuelas", counts.get("Escuelas", 0)],
+        ["Iglesias", counts.get("Iglesias", 0)],
+        ["Generadores de flujo", counts.get("Generadores de flujo", 0)],
+        ["Generadores de abasto", counts.get("Generadores de abasto", 0)],
+        ["Otros", counts.get("Otros", 0)],
     ]
 
-    t = Table(data, colWidths=[6*cm, 2*cm])
+    t = Table(data, colWidths=[6.2*cm, 2.2*cm])
     t.setStyle(TableStyle([
         ("BACKGROUND", (0,0), (-1,0), NETO_BLUE),
         ("TEXTCOLOR", (0,0), (-1,0), white),
         ("GRID", (0,0), (-1,-1), 0.25, HexColor("#666")),
         ("ALIGN", (1,1), (1,-1), "CENTER"),
         ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+        ("PADDING", (0,0), (-1,-1), 6),
     ]))
     return t
 
@@ -243,7 +249,6 @@ def generate_expansion_pdf(
 
     story = []
 
-    # ================= HEADER =================
     story.append(Paragraph("Evaluación de sitio – Expansión NETO", styles["NetoTitle"]))
 
     story.append(Paragraph(
@@ -267,7 +272,6 @@ def generate_expansion_pdf(
         Spacer(1,14)
     ]
 
-    # ================= MAPA (PÁGINA 1) =================
     story.append(Paragraph("Mapa y entorno comercial", styles["NetoHeader"]))
 
     MAP_W = 9.0 * cm
@@ -279,7 +283,6 @@ def generate_expansion_pdf(
         style=[("VALIGN", (0,0), (-1,-1), "TOP")]
     ))
 
-    # ================= EVALUACIÓN (PÁGINA 2) =================
     story.append(PageBreak())
     story.append(Paragraph("Evaluación del sitio", styles["NetoHeader"]))
 
@@ -300,7 +303,6 @@ def generate_expansion_pdf(
         style=[("VALIGN", (0,0), (-1,-1), "TOP")]
     ))
 
-    # ================= BENCHMARK + TIENDA (PÁGINA 3) =================
     benchmark_table = payload.get("benchmark_table")
     if benchmark_table:
         story.append(PageBreak())
